@@ -1,0 +1,1023 @@
+---
+title: "ADA_SexDisparity"
+author: "Ruyu & Shihui"
+date: "4/19/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+#Step Zero: Package Install and Library
+```{r}
+#install.packages("descr")
+library(descr)
+library(mice)
+library(tidyverse)
+library(survival)
+library(ggfortify)
+#install.packages("survminer")
+library(survminer)
+```
+
+#Step One: Data Loading and Cleaning
+```{r}
+ada_final <- read.csv("/Users/ruyushi/Desktop/WUSTL/SP2020/Advanced Data Analysis/Final_Project/Cleaned_Data_ADAfinal.csv")
+#use abbreviation for column names
+colnames(ada_final) <- c("age", "race", "sex", "diagnosed_year", "region", "ICD", "event", "survival_month", "flag")
+#check levels of categorical variables
+levels(ada_final$age)
+levels(ada_final$race)
+levels(ada_final$sex)
+levels(ada_final$region)
+levels(ada_final$ICD)
+levels(ada_final$event)
+#recode categorical variables
+ada_final$age_cat <- recode(ada_final$age,
+                        '00 years' = 0,
+                        '01-04 years' = 1,
+                        '05-09 years' = 2,
+                        '10-14 years' = 3,
+                        '15-19 years' = 4,
+                        '20-24 years' = 5)
+ada_final$age_cat <- factor(ada_final$age_cat,
+                            levels = c(0, 1, 2, 3, 4, 5),
+                            labels = c('00 years', '01-04 years', '05-09 years', '10-14 years', '15-19 years', '20-24 years'))
+
+ada_final$race_cat <- recode(ada_final$race,
+                         'White' = 0,
+                         'Black' = 1,
+                         'Other (American Indian/AK Native, Asian/Pacific Islander)' = 2,
+                         'Unknown' = 3)
+ada_final$race_cat <- factor(ada_final$race_cat,
+                             levels = c(0, 1, 2, 3),
+                             labels = c('White', 'Black', 'Other (American Indian/AK Native, Asian/Pacific Islander)', 'Unknown'))
+
+ada_final$sex_cat <- recode(ada_final$sex,
+                        'Male' = 0,
+                        'Female' = 1)
+ada_final$sex_cat <- factor(ada_final$sex_cat, 
+                            levels = c(0, 1),
+                            labels = c('Male', 'Female'))
+
+ada_final$region_cat <- recode(ada_final$region,
+                               'East' = 0,
+                               'Southwest' = 1,
+                               'Northern Plains' = 2,
+                               'Pacific Coast' = 3,
+                               'Alaska' = 4)
+ada_final$region_cat <- factor(ada_final$region_cat,
+                               levels = c(0, 1, 2, 3, 4),
+                               labels = c('East', 'Southwest', 'Northern Plains', 'Pacific Coast', 'Alaska'))
+
+ada_final$ICD_cat <- recode(ada_final$ICD, 
+                            '9840/3: Acute erythroid leukemia' = 0,
+                            '9861/3: Acute myeloid leukemia, NOS' = 1,
+                            '9865/3: Acute myeloid leukemia with t(6;9)(p23;q34);DEK-NUP214' = 2,
+                            '9866/3: Acute promyelocytic leukemia (AML with t(15;17)(q22;q12)) PML/RARA' = 3,
+                            '9867/3: Acute myelomonocytic leukemia' = 4,
+                            '9869/3: Acute myeloid leuk. inv(3)(q21;q26.2) or t(3;3)(q21;q26.2); RPN1-EVI1' = 5,
+                            '9871/3: AML with inv(16)(p13.1q22) or t(16;16)(p13.1;q22), CBFB-MYH11' = 6,
+                            '9872/3: Acute myeloid leukemia with minimal differentiation' = 7,
+                            '9873/3: Acute myeloid leukemia without maturation' = 8,
+                            '9874/3: Acute myeloid leukemia with maturation' = 9,
+                            '9895/3: Acute myeloid leukemia with myelodysplasia-related changes' = 10,
+                            '9896/3: Acute myeloid leukemia, t(8;21)(q22;q22) RUNX1-RUNX1T1' = 11,
+                            '9897/3: Acute myeloid leukemia with t(9;11)(p22;q23);MLLT3-MLL' = 12,
+                            '9898/3: Myeloid leukemia associated with Down Syndrome' = 13,
+                            '9910/3: Acute megakaryoblastic leukemia' = 14,
+                            '9920/3: Therapy-related myeloid neoplasm' = 15)
+ada_final$ICD_cat <- factor(ada_final$ICD_cat,
+                            levels = c(0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15),
+                            labels = c('AEL', 'AML-NOS', 'AML t(1)', 'APL', 'AMML', 'AML inv(3)', 'AML inv(6)',
+                                       'AML min diff', 'AML w/o mat', 'AML w/ mat', 'AML-MRC', 'AML t(8)', 
+                                       'AML t(9)',  'AML w/ DS',  'AMKL',  't-AML'))
+
+ada_final$event_cat <- recode(ada_final$event,
+                              'Alive or dead of other cause' = 0,
+                              'Dead (missing/unknown COD)' = 0,
+                              'Dead (attributable to this cancer dx)' = 1)
+#ada_final$event_cat <- factor(ada_final$event_cat,
+#                              levels = c(0, 1),
+#                              labels = c('Censor', 'Event'))
+
+#check continuous variables
+table(ada_final$diagnosed_year)
+table(ada_final$survival_month)
+#recode continuous variables
+ada_final$year_cat[ada_final$diagnosed_year<1981] = 0
+ada_final$year_cat[ada_final$diagnosed_year>1980 & ada_final$diagnosed_year<1987] = 1
+ada_final$year_cat[ada_final$diagnosed_year>1986 & ada_final$diagnosed_year<1993] = 2
+ada_final$year_cat[ada_final$diagnosed_year>1992 & ada_final$diagnosed_year<1999] = 3
+ada_final$year_cat[ada_final$diagnosed_year>1998 & ada_final$diagnosed_year<2005] = 4
+ada_final$year_cat[ada_final$diagnosed_year>2004 & ada_final$diagnosed_year<2011] = 5
+ada_final$year_cat[ada_final$diagnosed_year>2010 & ada_final$diagnosed_year<2017] = 6
+ada_final$year_cat <- factor(ada_final$year_cat,
+                             levels = c(0, 1, 2, 3, 4, 5, 6),
+                             labels = c('1975-1980', '1981-1986', '1987-1992', '1993-1998', '1999-2004', '2005-2010', '2011-2016'))
+
+ada_final$survival_cat[ada_final$survival_month<=60] = 0
+ada_final$survival_cat[ada_final$survival_month>60] = 1
+ada_final$survival_cat <- factor(ada_final$survival_cat,
+                                 levels = c(0, 1),
+                                 labels = c('5 years or less', 'more than 5 years'))
+
+class(ada_final$sex_cat)
+```
+
+#Step Two: Descriptive Analysis
+```{r}
+#create a function to calculate frequency
+freq.table <- function(x){
+    a = as.data.frame(table(x))[1]
+    b = as.data.frame(table(x))[2]
+    for (i in as.data.frame(table(x))[2]){
+        e = i*100/sum(as.data.frame(table(x))[2])
+        d = c()
+        d = append(d, e)
+    }
+    h = cbind(a, b, d)
+    colnames(h) = c('values', 'number', 'Frequency(%)')
+    h
+}
+```
+
+```{r}
+#frequency table for age
+freq.table(ada_final$age_cat)
+```
+
+```{r}
+#frequency table for race
+freq.table(ada_final$race_cat)
+```
+
+```{r}
+#frequency table for sex
+freq.table(ada_final$sex_cat)
+```
+
+```{r}
+#frequency table for region
+freq.table(ada_final$region_cat)
+```
+
+```{r}
+#frequency table for AML subtype (ICD code)
+freq.table(ada_final$ICD_cat)
+```
+
+```{r}
+#frequency table for event
+freq.table(ada_final$event_cat)
+```
+
+```{r}
+#frequency table for diagnosed year
+freq.table(ada_final$year_cat)
+```
+
+```{r}
+#frequency table for survival month
+freq.table(ada_final$survival_cat)
+```
+
+#Step Three: Crosstable and Chi-Squared Test
+Part One: By sex
+```{r}
+CrossTable(ada_final$age_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$race_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$ICD_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$event_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$region_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$year_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(ada_final$survival_cat, ada_final$sex_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+Part Two: By event (calculate mortality rate)
+```{r}
+sex_Female <- ada_final[ada_final$sex_cat == 'Female',]
+sex_Male <- ada_final[ada_final$sex_cat == 'Male',]
+#View(sex_Female)
+CrossTable(sex_Female$age_cat, sex_Female$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+CrossTable(sex_Male$age_cat, sex_Male$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(sex_Female$race_cat, sex_Female$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+CrossTable(sex_Male$race_cat, sex_Male$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(sex_Female$region_cat, sex_Female$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+CrossTable(sex_Male$region_cat, sex_Male$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(sex_Female$ICD_cat, sex_Female$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+CrossTable(sex_Male$ICD_cat, sex_Male$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+```{r}
+CrossTable(sex_Female$year_cat, sex_Female$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+CrossTable(sex_Male$year_cat, sex_Male$event_cat, chisq = TRUE, prop.r = TRUE, prop.c = FALSE, prop.t = FALSE, prop.chisq = FALSE)
+```
+
+#Step Four: Check Missing Value 
+```{r}
+#check whether there are missing value in the dataset
+md.pattern(ada_final)
+```
+
+#Step Five: Survival analysis: Kaplan Meier Curves
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for AML subtypes (ICD codes)
+icd_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, ada_final)
+icd_sex
+
+plot(icd_sex, lty = 2:3, main = "Overall", xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, ada_final)
+```
+
+Part One: Sexual difference in AML subtypes
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD0
+icd0 <- ada_final[ada_final$ICD_cat == 'AEL',]
+icd0_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd0)
+icd0_sex
+
+plot(icd0_sex, lty = 2:3, main = "AEL", xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#levels(ada_final$ICD_cat)
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd0)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD1
+icd1 <- ada_final[ada_final$ICD_cat == 'AML-NOS',]
+icd1_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd1)
+icd1_sex
+
+plot(icd1_sex, lty = 2:3, main = 'AML-NOS', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd1)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD2
+icd2 <- ada_final[ada_final$ICD_cat == 'AML t(1)',]
+icd2_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd2)
+icd2_sex
+
+plot(icd2_sex, lty = 2:3, main = 'AML t(1)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd2)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD3
+icd3 <- ada_final[ada_final$ICD_cat == 'APL',]
+icd3_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd3)
+icd3_sex
+
+plot(icd3_sex, lty = 2:3, main = 'APL', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd3)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD4
+icd4 <- ada_final[ada_final$ICD_cat == 'AMML',]
+icd4_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd4)
+icd4_sex
+
+plot(icd4_sex, lty = 2:3, main = 'AMML', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd4)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD5
+icd5 <- ada_final[ada_final$ICD_cat == 'AML inv(3)',]
+icd5_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd5)
+icd5_sex
+
+plot(icd5_sex, lty = 2:3, main = 'AML inv(3)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd5)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD6
+icd6 <- ada_final[ada_final$ICD_cat == 'AML inv(6)',]
+icd6_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd6)
+icd6_sex
+
+plot(icd6_sex, lty = 2:3, main = 'AML inv(6)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd6)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD7
+icd7 <- ada_final[ada_final$ICD_cat == 'AML min diff',]
+icd7_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd7)
+icd7_sex
+
+plot(icd7_sex, lty = 2:3, main = 'AML min diff', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd7)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD8
+icd8 <- ada_final[ada_final$ICD_cat == 'AML w/o mat',]
+icd8_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd8)
+icd8_sex
+
+plot(icd8_sex, lty = 2:3, main = 'AML w/o mat', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd8)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD9
+icd9 <- ada_final[ada_final$ICD_cat == 'AML w/ mat',]
+icd9_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd9)
+icd9_sex
+
+plot(icd9_sex, lty = 2:3, main = 'AML w/ mat', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd9)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD10
+icd10 <- ada_final[ada_final$ICD_cat == 'AML-MRC',]
+icd10_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd10)
+icd10_sex
+
+plot(icd10_sex, lty = 2:3, main = 'AML-MRC', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd10)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD11
+icd11 <- ada_final[ada_final$ICD_cat == 'AML t(8)',]
+icd11_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd11)
+icd11_sex
+
+plot(icd11_sex, lty = 2:3, main = 'AML t(8)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd11)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD12
+icd12 <- ada_final[ada_final$ICD_cat == 'AML t(9)',]
+icd12_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd12)
+icd12_sex
+
+plot(icd12_sex, lty = 2:3, main = 'AML t(9)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd12)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD13
+icd13 <- ada_final[ada_final$ICD_cat == 'AML w/ DS',]
+icd13_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd13)
+icd13_sex
+
+plot(icd13_sex, lty = 2:3, main = 'AML w/ DS', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd13)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD14
+icd14 <- ada_final[ada_final$ICD_cat == 'AMKL',]
+icd14_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd14)
+icd14_sex
+
+plot(icd14_sex, lty = 2:3, main = 'AMKL', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd14)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for ICD15
+icd15 <- ada_final[ada_final$ICD_cat == 't-AML',]
+icd15_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, icd15)
+icd15_sex
+
+plot(icd15_sex, lty = 2:3, main = 't-AML', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, icd15)
+```
+
+```{r}
+#log rank and post-hoc tests for pairwise differences (for when you have more than 2 groups)
+pairwise_survdiff(Surv(survival_month, event_cat) ~ ICD_cat, ada_final)
+```
+
+```{r}
+#combine all plots of AML subtypes
+par(mfrow = c(2,2))
+plot(icd0_sex, lty = 2:3, main = "AEL", xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd1_sex, lty = 2:3, main = 'AML-NOS', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd2_sex, lty = 2:3, main = 'AML t(1)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd3_sex, lty = 2:3, main = 'APL', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+
+par(mfrow = c(2,2))
+plot(icd4_sex, lty = 2:3, main = 'AMML', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd5_sex, lty = 2:3, main = 'AML inv(3)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd6_sex, lty = 2:3, main = 'AML inv(6)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd7_sex, lty = 2:3, main = 'AML min diff', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+
+par(mfrow = c(2,2))
+plot(icd8_sex, lty = 2:3, main = 'AML w/o mat', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd9_sex, lty = 2:3, main = 'AML w/ mat', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd10_sex, lty = 2:3, main = 'AML-MRC', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd11_sex, lty = 2:3, main = 'AML t(8)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+
+
+par(mfrow = c(2,2))
+plot(icd12_sex, lty = 2:3, main = 'AML t(9)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd13_sex, lty = 2:3, main = 'AML w/ DS', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd14_sex, lty = 2:3, main = 'AMKL', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(icd15_sex, lty = 2:3, main = 't-AML', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+Part Two: Sexual difference in age groups
+```{r}
+#levels(ada_final$age_cat)
+#sexual difference in Median Survival Time and Survival Curve for age group '00 years'
+age00 <- ada_final[ada_final$age_cat == '00 years',]
+age00_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age00)
+age00_sex
+
+plot(age00_sex, lty = 2:3, main = '00 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age00)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for age group '01-04 years'
+age0104 <- ada_final[ada_final$age_cat == '01-04 years',]
+age0104_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age0104)
+age0104_sex
+
+plot(age0104_sex, lty = 2:3, main = '01-04 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age0104)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for age group '05-09 years'
+age0509 <- ada_final[ada_final$age_cat == '05-09 years',]
+age0509_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age0509)
+age0509_sex
+
+plot(age0509_sex, lty = 2:3, main = '05-09 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age0509)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for age group '10-14 years'
+age1014 <- ada_final[ada_final$age_cat == '10-14 years',]
+age1014_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age1014)
+age1014_sex
+
+plot(age1014_sex, lty = 2:3, main = '10-14 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age1014)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for age group '15-19 years'
+age1519 <- ada_final[ada_final$age_cat == '15-19 years',]
+age1519_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age1519)
+age1519_sex
+
+plot(age1519_sex, lty = 2:3, main = '15-19 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age1519)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for age group '20-24 years'
+age2024 <- ada_final[ada_final$age_cat == '20-24 years',]
+age2024_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, age2024)
+age2024_sex
+
+plot(age2024_sex, lty = 2:3, main = '20-24 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, age2024)
+```
+
+```{r}
+#log rank and post-hoc tests for pairwise differences (for when you have more than 2 groups)
+pairwise_survdiff(Surv(survival_month, event_cat) ~ age_cat, ada_final)
+```
+
+```{r}
+#combine all plots of age groups
+par(mfrow = c(2,3))
+plot(age00_sex, lty = 2:3, main = '00 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(age0104_sex, lty = 2:3, main = '01-04 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(age0509_sex, lty = 2:3, main = '05-09 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(age1014_sex, lty = 2:3, main = '10-14 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(age1519_sex, lty = 2:3, main = '15-19 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(age2024_sex, lty = 2:3, main = '20-24 years', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+Part Three: Sexual difference in race subgroups
+```{r}
+#levels(ada_final$race_cat)
+#sexual difference in Median Survival Time and Survival Curve for race group "White"
+race_white <- ada_final[ada_final$race_cat == 'White',]
+race_white_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, race_white)
+race_white_sex
+
+plot(race_white_sex, main = 'White', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, race_white)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for race group 'Black'
+race_black <- ada_final[ada_final$race_cat == 'Black',]
+race_black_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, race_black)
+race_black_sex
+
+plot(race_black_sex, lty = 2:3, main = 'Black', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, race_black)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for race group 'Other (American Indian/AK Native, Asian/Pacific Islander)'
+race_other <- ada_final[ada_final$race_cat == 'Other (American Indian/AK Native, Asian/Pacific Islander)',]
+race_other_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, race_other)
+race_other_sex
+
+plot(race_other_sex, lty = 2:3, main = 'Other (American Indian/AK Native, Asian/Pacific Islander)', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, race_other)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for race group 'Unknown'
+race_unknown <- ada_final[ada_final$race_cat == 'Unknown',]
+race_unknown_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, race_unknown)
+race_unknown_sex
+
+plot(race_unknown_sex, lty = 2:3, main = 'Unknown', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, race_unknown)
+```
+
+```{r}
+#log rank and post-hoc tests for pairwise differences (for when you have more than 2 groups)
+pairwise_survdiff(Surv(survival_month, event_cat) ~ race_cat, ada_final)
+```
+
+```{r}
+par(mfrow = c(2,2))
+plot(race_white_sex, main = 'White', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(race_black_sex, lty = 2:3, main = 'Black', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(race_other_sex, lty = 2:3, main = 'Other', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(race_unknown_sex, lty = 2:3, main = 'Unknown', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+Part Four: Sexual difference in region subgroups
+```{r}
+#levels(ada_final$region_cat)
+#sexual difference in Median Survival Time and Survival Curve for region group 'East'
+region_east <- ada_final[ada_final$region_cat == 'East',]
+region_east_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, region_east)
+region_east_sex
+
+plot(region_east_sex, main = 'East', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, region_east)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group 'Southwest'
+region_southwest <- ada_final[ada_final$region_cat == 'Southwest',]
+region_southwest_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, region_southwest)
+region_southwest_sex
+
+plot(region_southwest_sex, main = 'Southwest', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, region_southwest)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group 'Northern Plains'
+region_np <- ada_final[ada_final$region_cat == 'Northern Plains',]
+region_np_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, region_np)
+region_np_sex
+
+plot(region_np_sex, lty = 2:3, main = 'Northern Plains', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, region_np)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group 'Pacific Coast'
+region_pc <- ada_final[ada_final$region_cat == 'Pacific Coast',]
+region_pc_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, region_pc)
+region_pc_sex
+
+plot(region_pc_sex, lty = 2:3, main = 'Pacific Coast', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, region_pc)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group 'Alaska'
+region_alaska <- ada_final[ada_final$region_cat == 'Alaska',]
+region_alaska_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, region_alaska)
+region_alaska_sex
+
+plot(region_alaska_sex, lty = 2:3, main = 'Alaska', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, region_alaska)
+```
+
+```{r}
+#log rank and post-hoc tests for pairwise differences (for when you have more than 2 groups)
+pairwise_survdiff(Surv(survival_month, event_cat) ~ region_cat, ada_final)
+```
+
+```{r}
+par(mfrow = c(2,3))
+plot(region_east_sex, main = 'East', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(region_southwest_sex, main = 'Southwest', lty = 2:3, xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(region_np_sex, lty = 2:3, main = 'Northern Plains', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(region_pc_sex, lty = 2:3, main = 'Pacific Coast', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(region_alaska_sex, lty = 2:3, main = 'Alaska', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+Part Five: Sexual difference in year of diagnosis subgroups
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '1975-1980'
+year_7580 <- ada_final[ada_final$year_cat == '1975-1980',]
+year_7580_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_7580)
+year_7580_sex
+
+plot(year_7580_sex, lty = 2:3, main = '1975-1980', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_7580)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '1981-1986'
+year_8186 <- ada_final[ada_final$year_cat == '1981-1986',]
+year_8186_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_8186)
+year_8186_sex
+
+plot(year_8186_sex, lty = 2:3, main = '1981-1986', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_8186)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '1987-1992'
+year_8792 <- ada_final[ada_final$year_cat == '1987-1992',]
+year_8792_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_8792)
+year_8792_sex
+
+plot(year_8792_sex, lty = 2:3, main = '1987-1992', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_8792)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '1993-1998'
+year_9398 <- ada_final[ada_final$year_cat == '1993-1998',]
+year_9398_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_9398)
+year_9398_sex
+
+plot(year_9398_sex, lty = 2:3, main = '1993-1998', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_9398)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '1999-2004'
+year_9904 <- ada_final[ada_final$year_cat == '1999-2004',]
+year_9904_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_9904)
+year_9904_sex
+
+plot(year_9904_sex, lty = 2:3, main = '1999-2004', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_9904)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '2005-2010'
+year_0510 <- ada_final[ada_final$year_cat == '2005-2010',]
+year_0510_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_0510)
+year_0510_sex
+
+plot(year_0510_sex, lty = 2:3, main = '2005-2010', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_0510)
+```
+
+```{r}
+#sexual difference in Median Survival Time and Survival Curve for region group '2011-2016'
+year_1116 <- ada_final[ada_final$year_cat == '2011-2016',]
+year_1116_sex <- survfit(Surv(survival_month, event_cat) ~ sex_cat, year_1116)
+year_1116_sex
+
+plot(year_1116_sex, lty = 2:3, main = '2011-2016', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+```{r}
+#test survival curve differences
+survdiff(Surv(survival_month, event_cat) ~ sex_cat, year_1116)
+```
+
+```{r}
+#log rank and post-hoc tests for pairwise differences (for when you have more than 2 groups)
+pairwise_survdiff(Surv(survival_month, event_cat) ~ year_cat, ada_final)
+```
+
+```{r}
+par(mfrow = c(2,3))
+plot(year_7580_sex, lty = 2:3, main = '1975-1980', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(year_8186_sex, lty = 2:3, main = '1981-1986', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(year_8792_sex, lty = 2:3, main = '1987-1992', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(year_9398_sex, lty = 2:3, main = '1993-1998', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(year_9904_sex, lty = 2:3, main = '1999-2004', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+plot(year_0510_sex, lty = 2:3, main = '2005-2010', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+par(mfrow = c(1,1))
+plot(year_1116_sex, lty = 2:3, main = '2011-2016', xlab = 'Months', ylab = 'Proportion surviving')
+legend('bottomright', c('Male', 'Female'), lty = 2:3)
+```
+
+
+#Step Six: Check PH assumption using Log-log curves: log(-log(survival)) against log(time) 
+```{r}
+leuksurv <- Surv(ada_final$survival_month, ada_final$event_cat)
+leuksurv
+
+#levels(ada_final$age)
+#levels(ada_final$race)
+#levels(ada_final$sex)
+#levels(ada_final$region)
+#levels(ada_final$ICD)
+#levels(ada_final$event)
+
+plot(survfit(leuksurv ~ ada_final$age_cat), main= "age log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t)))") #ph assumption violated
+plot(survfit(leuksurv ~ ada_final$race_cat), main="race log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t)))") #ph assumption not violated
+plot(survfit(leuksurv ~ ada_final$region_cat), main="region log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t)))") #ph assumption violated
+plot(survfit(leuksurv ~ ada_final$ICD_cat), main="AML subtype log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t)))") #ph assumption violated
+plot(survfit(leuksurv ~ ada_final$year_cat), main="year at diagnosis log log plot", fun="cloglog", xlab="Time", ylab="log(-log(S(t)))") #ph assumption violated
+```
+
+#Step Seven: Univariate Cox proportional hazard models
+```{r}
+#unadjusted cox model for sex
+sex.cox <- coxph(Surv(survival_month, event_cat) ~ sex_cat, data = ada_final, ties = "breslow")
+summary(sex.cox)
+#unadjusted cox model for race
+race.cox <- coxph(Surv(survival_month, event_cat) ~ race_cat, data = ada_final, ties = "breslow")
+summary(race.cox)
+#unadjusted cox model for age
+age.cox <- coxph(Surv(survival_month, event_cat) ~ age_cat, data = ada_final, ties = "breslow")
+summary(age.cox)
+#unadjusted cox model for year
+year.cox <- coxph(Surv(survival_month, event_cat) ~ year_cat, data = ada_final, ties = "breslow")
+summary(year.cox)
+#unadjusted cox model for AML subtype
+ICD.cox <- coxph(Surv(survival_month, event_cat) ~ ICD_cat, data = ada_final, ties = "breslow")
+summary(ICD.cox)
+#unadjusted cox model for region
+region.cox <- coxph(Surv(survival_month, event_cat) ~ region_cat, data = ada_final, ties = "breslow")
+summary(region.cox)
+```
+
+#Step Eight: Multivariate Cox proportional hazard model
+```{r}
+#adjusted Cox Model for sex
+sex.ad.cox <- coxph(Surv(survival_month, event_cat) ~ sex_cat + age_cat + race_cat + region_cat + ICD_cat + year_cat, data = ada_final,ties = "breslow")
+summary(sex.ad.cox)
+```
